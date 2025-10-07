@@ -99,7 +99,7 @@ def estimate_depth_heatmap(image_path):
         logging.error(f"Error during depth prediction: {e}")
         return None, None
 
-def calculate_goat_volume_and_weight_proxy(raw_depth_map, segmentation_mask, scaling_factor_K=0.0001):
+def calculate_goat_volume_and_weight_proxy(raw_depth_map, segmentation_mask, scaling_factor_K=0.000016):
     """
     Calculates a volume proxy and a weight proxy for the goat.
     Args:

@@ -1,6 +1,8 @@
-ultralytics
-streamlit
-opencv-python
-Pillow
-timm:w
-
+ultralytics==8.0.196
+streamlit==1.27.2
+opencv-python==4.8.1.78
+Pillow==10.0.1
+timm==0.9.10
+numpy==1.26.0
+matplotlib==3.8.0
+torch==2.1.0
