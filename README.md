@@ -112,6 +112,3 @@ The weight estimation provided by this model is a **proxy** and is based on a si
 
 If you'd like to contribute to this project, please feel free to fork the repository, create a new branch, and submit a pull request.
 
-## License
-
-This project is open-source and available under the [MIT License](LICENSE).
