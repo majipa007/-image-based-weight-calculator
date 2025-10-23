@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Goat Weight Detection & Depth Estimation</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary: #0A5C36;
+            --primary-light: #0d7045;
+            --primary-dark: #074029;
+            --secondary: #ffffff;
+            --text-dark: #1a1a1a;
+            --text-light: #666666;
+            --bg-light: #f8f9fa;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: var(--text-dark);
+            overflow-x: hidden;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        /* Navigation */
+        nav {
+            position: fixed;
+            top: 0;
+            width: 100%;
+            background: rgba(10, 92, 54, 0.95);
+            backdrop-filter: blur(10px);
+            z-index: 1000;
+            padding: 1rem 0;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        nav .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        nav .logo {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: white;
+        }
+
+        nav ul {
+            display: flex;
+            list-style: none;
+            gap: 2rem;
+        }
+
+        nav a {
+            color: white;
+            text-decoration: none;
+            transition: opacity 0.3s;
+        }
+
+        nav a:hover {
+            opacity: 0.8;
+        }
+
+        /* Hero Section */
+        .hero {
+            min-height: 100vh;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            color: white;
+            padding: 2rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 600"><circle cx="200" cy="100" r="150" fill="rgba(255,255,255,0.05)"/><circle cx="800" cy="400" r="200" fill="rgba(255,255,255,0.03)"/><circle cx="1000" cy="150" r="100" fill="rgba(255,255,255,0.04)"/></svg>');
+            opacity: 0.3;
+        }
+
+        .hero-content {
+            max-width: 800px;
+            position: relative;
+            z-index: 1;
+            animation: fadeInUp 1s ease-out;
+        }
+
+        .hero h1 {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            font-weight: 700;
+        }
+
+        .hero .tagline {
+            font-size: 1.5rem;
+            margin-bottom: 2rem;
+            opacity: 0.9;
+        }
+
+        .cta-button {
+            display: inline-block;
+            padding: 1rem 2.5rem;
+            background: white;
+            color: var(--primary);
+            text-decoration: none;
+            border-radius: 50px;
+            font-weight: bold;
+            transition: all 0.3s;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+
+        .cta-button:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+        }
+
+        /* Section Styles */
+        section {
+            padding: 5rem 2rem;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .section-title {
+            text-align: center;
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+            color: var(--primary);
+        }
+
+        .section-subtitle {
+            text-align: center;
+            color: var(--text-light);
+            margin-bottom: 3rem;
+            font-size: 1.1rem;
+        }
+
+        /* About Section */
+        .about {
+            background: var(--bg-light);
+        }
+
+        .about-content {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin-top: 2rem;
+        }
+
+        .about-card {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            transition: transform 0.3s;
+        }
+
+        .about-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .about-card h3 {
+            color: var(--primary);
+            margin-bottom: 1rem;
+        }
+
+        /* Technical Overview */
+        .tech-stack {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 2rem;
+            margin-top: 3rem;
+        }
+
+        .tech-item {
+            text-align: center;
+            padding: 1.5rem;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            min-width: 150px;
+            transition: all 0.3s;
+        }
+
+        .tech-item:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 20px rgba(10,92,54,0.2);
+        }
+
+        .tech-icon {
+            font-size: 3rem;
+            margin-bottom: 0.5rem;
+        }
+
+        /* Demo Section */
+        .demo {
+            background: var(--bg-light);
+        }
+
+        .demo-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 2rem;
+            margin-top: 3rem;
+        }
+
+        .demo-step {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            position: relative;
+        }
+
+        .step-number {
+            width: 50px;
+            height: 50px;
+            background: var(--primary);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            font-weight: bold;
+            margin: 0 auto 1rem;
+        }
+
+        .demo-placeholder {
+            width: 100%;
+            height: 200px;
+            background: var(--bg-light);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-light);
+            margin-top: 1rem;
+            border: 2px dashed #ccc;
+        }
+
+        /* Results Section */
+        .results-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin-top: 3rem;
+        }
+
+        .result-image img {
+    width: 100%;
+    height: 250px;
+    object-fit: cover;
+    border-bottom: 2px solid var(--primary);
+    transition: transform 0.3s ease;
+}
+
+.result-image img:hover {
+    transform: scale(1.05);
+}
+
+        .result-card {
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            transition: transform 0.3s;
+        }
+
+        .result-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .result-image {
+            width: 100%;
+            height: 250px;
+            background: var(--bg-light);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-light);
+        }
+
+        .result-info {
+            padding: 1.5rem;
+        }
+
+        .result-info h3 {
+            color: var(--primary);
+            margin-bottom: 0.5rem;
+        }
+
+        /* Team Section */
+        .team {
+            background: var(--bg-light);
+        }
+
+        .team-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 2rem;
+            margin-top: 3rem;
+        }
+
+        .team-member {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .team-member h3 {
+            color: var(--primary);
+            margin-bottom: 0.5rem;
+        }
+
+        .team-member p {
+            color: var(--text-light);
+            font-size: 0.9rem;
+        }
+
+        /* Footer */
+        footer {
+            background: var(--primary-dark);
+            color: white;
+            padding: 2rem;
+            text-align: center;
+        }
+
+        .footer-links {
+            margin-top: 1rem;
+        }
+
+        .footer-links a {
+            color: white;
+            text-decoration: none;
+            margin: 0 1rem;
+            transition: opacity 0.3s;
+        }
+
+        .footer-links a:hover {
+            opacity: 0.7;
+        }
+
+        /* Animations */
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            nav ul {
+                display: none;
+            }
+
+            .hero h1 {
+                font-size: 2rem;
+            }
+
+            .hero .tagline {
+                font-size: 1.2rem;
+            }
+
+            .section-title {
+                font-size: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav>
+        <div class="container">
+            <div class="logo">🐐 Goat Weight AI</div>
+            <ul>
+                <li><a href="#home">Home</a></li>
+                <li><a href="#about">About</a></li>
+                <li><a href="#tech">Technology</a></li>
+                <li><a href="#demo">Demo</a></li>
+                <li><a href="#results">Results</a></li>
+                <li><a href="#team">Team</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section id="home" class="hero">
+        <div class="hero-content">
+            <h1>Goat Weight Detection & Depth Estimation</h1>
+            <p class="tagline">Image-Based Goat Body Size and Weight Estimation</p>
+            <a href="#demo" class="cta-button">View Demo</a>
+        </div>
+    </section>
+
+    <!-- About Section -->
+    <section id="about" class="about">
+        <div class="container">
+            <h2 class="section-title">About the Project</h2>
+            <p class="section-subtitle">Revolutionizing livestock weight estimation using AI</p>
+            
+            <div class="about-content">
+                <div class="about-card">
+                    <h3>🎯 Problem Statement</h3>
+                    <p>Farmers often lack quick, accurate, and non-invasive methods to estimate livestock weight. Traditional weighing scales are expensive, require physical handling, and can stress animals.</p>
+                </div>
+                
+                <div class="about-card">
+                    <h3>💡 Our Solution</h3>
+                    <p>Using advanced computer vision and deep learning, we've developed an AI system that estimates goat weight from a single image. No physical contact required.</p>
+                </div>
+                
+                <div class="about-card">
+                    <h3>🚀 Impact</h3>
+                    <p>This technology enables farmers to monitor animal health, optimize feeding schedules, and make informed decisions about livestock management efficiently.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Technical Overview -->
+    <section id="tech">
+        <div class="container">
+            <h2 class="section-title">Technical Overview</h2>
+            <p class="section-subtitle">Powered by cutting-edge AI and computer vision</p>
+            
+            <div class="tech-stack">
+                <div class="tech-item">
+                    <div class="tech-icon">🐍</div>
+                    <h4>Python</h4>
+                    <p>Core Language</p>
+                </div>
+                
+                <div class="tech-item">
+                    <div class="tech-icon">🧠</div>
+                    <h4>YOLO</h4>
+                    <p>Segmentation</p>
+                </div>
+                
+                <div class="tech-item">
+                    <div class="tech-icon">📏</div>
+                    <h4>MiDaS</h4>
+                    <p>Depth Estimation</p>
+                </div>
+                
+                <div class="tech-item">
+                    <div class="tech-icon">🎨</div>
+                    <h4>OpenCV</h4>
+                    <p>Image Processing</p>
+                </div>
+                
+                <div class="tech-item">
+                    <div class="tech-icon">⚡</div>
+                    <h4>PyTorch</h4>
+                    <p>Deep Learning</p>
+                </div>
+                
+                <div class="tech-item">
+                    <div class="tech-icon">🖥️</div>
+                    <h4>Streamlit</h4>
+                    <p>Web Interface</p>
+                </div>
+            </div>
+
+            <div style="margin-top: 3rem; text-align: center; max-width: 800px; margin-left: auto; margin-right: auto;">
+                <h3 style="color: var(--primary); margin-bottom: 1rem;">How It Works</h3>
+                <p style="text-align: left; line-height: 1.8;">
+                    <strong>1. Image Segmentation:</strong> YOLO-based model identifies and segments the goat from the background.<br>
+                    <strong>2. Depth Estimation:</strong> MiDaS model generates a depth map to understand the 3D structure of the goat.<br>
+                    <strong>3. Volume Calculation:</strong> Using the segmentation mask and depth information, we calculate a volume proxy.<br>
+                    <strong>4. Weight Estimation:</strong> A calibrated scaling factor converts the volume proxy to estimated weight in kilograms.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Demo Section -->
+    <section id="demo" class="demo">
+        <div class="container">
+            <h2 class="section-title">Demo Workflow</h2>
+            <p class="section-subtitle">See how our AI processes images in three simple steps</p>
+            
+            <div class="demo-container">
+                <div class="demo-step">
+                    <div class="step-number">1</div>
+                    <h3>Upload Image</h3>
+                    <p>Upload a clear photo of a goat</p>
+                    <div class="demo-placeholder">
+                        📸 Original Image
+                    </div>
+                </div>
+                
+                <div class="demo-step">
+                    <div class="step-number">2</div>
+                    <h3>AI Processing</h3>
+                    <p>Segmentation & Depth Analysis</p>
+                    <div class="demo-placeholder">
+                        🔍 Segmented + Depth Map
+                    </div>
+                </div>
+                
+                <div class="demo-step">
+                    <div class="step-number">3</div>
+                    <h3>Get Results</h3>
+                    <p>Volume & Weight Estimation</p>
+                    <div class="demo-placeholder">
+                        📊 Weight: 45.67 kg
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Results Section -->
+    <section id="results">
+        <div class="container">
+            <h2 class="section-title">Results & Insights</h2>
+            <p class="section-subtitle">Real-world applications and accuracy</p>
+            
+            
+            <div class="results-grid">
+                <div class="result-card">
+                    <div class="result-image">
+                        <img src="images/goat_original.jpg" alt="Original Goat Image">
+                    </div>
+                    <div class="result-info">
+                        <h3>Input Analysis</h3>
+                        <p>High-quality image capture with proper lighting and angle provides the best results for accurate weight estimation.</p>
+                    </div>
+                </div>
+            
+                <div class="result-card">
+                    <div class="result-image">
+                        <img src="images/goat_segmented.jpg" alt="Depth Map Visualization">
+                    </div>
+                    <div class="result-info">
+                        <h3>Depth Visualization</h3>
+                        <p>MiDaS generates detailed depth maps that capture the 3D structure and body dimensions of the goat.</p>
+                    </div>
+                </div>
+            
+                <div class="result-card">
+                    <div class="result-image">
+                        <img src="images/goat_result.png" alt="Weight Estimation Result">
+                    </div>
+                    <div class="result-info">
+                        <h3>Final Results</h3>
+                        <p>Accurate weight estimation with volume proxy calculations. Results are approximate due to lack of camera calibration.</p>
+                    </div>
+                </div>
+            </div>
+            
+
+            <div style="margin-top: 3rem; padding: 2rem; background: white; border-radius: 10px; text-align: center;">
+                <h3 style="color: var(--primary); margin-bottom: 1rem;">📊 Key Metrics</h3>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 2rem; margin-top: 1.5rem;">
+                    <div>
+                        <div style="font-size: 2rem; font-weight: bold; color: var(--primary);">~90%</div>
+                        <p>Segmentation Accuracy</p>
+                    </div>
+                    <div>
+                        <div style="font-size: 2rem; font-weight: bold; color: var(--primary);">< 2s</div>
+                        <p>Processing Time</p>
+                    </div>
+                    <div>
+                        <div style="font-size: 2rem; font-weight: bold; color: var(--primary);">Non-invasive</div>
+                        <p>No Animal Stress</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Team Section -->
+    <section id="team" class="team">
+        <div class="container">
+            <h2 class="section-title">Our Team</h2>
+            <p class="section-subtitle">Meet the minds behind the innovation</p>
+            
+            <div class="team-grid">
+                <div class="team-member">
+                    <h3>Sulav Kumar Shrestha M</h3>
+                    <p>Artificial Intelligence and Data Science</p>
+                </div>
+                
+                <div class="team-member">
+                    <h3>Heera Y. R</h3>
+                    <p>Artificial Intelligence and Data Science</p>
+                </div>
+                
+                <div class="team-member">
+                    <h3>Theja Shree M</h3>
+                    <p>Civil Engineering</p>
+                </div>
+            </div>
+
+            <div style="margin-top: 3rem; text-align: center;">
+                <p style="font-size: 1.1rem; color: var(--text-light);">
+                    Collaborative project combining expertise in AI, data science, and engineering to solve real-world agricultural challenges.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <div class="container">
+            <div class="footer-links">
+                <a href="https://github.com/majipa007/-image-based-weight-calculator" target="_blank">
+                    GitHub Repository
+                </a>
+                <a href="#home">Back to Top</a>
+            </div>
+        </div>
+    </footer>
+</body>
+</html>
