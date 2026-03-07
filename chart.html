@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>System Design — Goat Weight Estimator</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #1a1a2e;
+    font-family: 'Inter', sans-serif;
+    padding: 40px;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+  }
+
+  .canvas {
+    width: 900px;
+    position: relative;
+  }
+
+  /* Title */
+  .title-block {
+    margin-bottom: 36px;
+  }
+  .title-block h1 {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: #f0f4ff;
+    letter-spacing: -0.01em;
+  }
+  .title-block p {
+    font-size: 0.75rem;
+    color: #6b7db3;
+    margin-top: 4px;
+  }
+
+  /* SVG canvas for all arrows */
+  .svg-layer {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .flow {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+  }
+
+  /* ── BOX TYPES ── */
+  .box {
+    border-radius: 10px;
+    padding: 13px 18px;
+    position: relative;
+    text-align: left;
+  }
+
+  .box-title {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #f0f4ff;
+    margin-bottom: 3px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .box-title .icon {
+    font-size: 0.9rem;
+    line-height: 1;
+  }
+  .box-sub {
+    font-size: 0.68rem;
+    color: #8899bb;
+    line-height: 1.6;
+    font-variant-numeric: tabular-nums;
+  }
+  .box-sub code {
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 0.66rem;
+    color: #aac4ff;
+    background: rgba(170,196,255,0.08);
+    padding: 0 4px;
+    border-radius: 3px;
+  }
+
+  /* pill tag */
+  .tag {
+    display: inline-block;
+    font-size: 0.6rem;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    border-radius: 99px;
+    margin-top: 6px;
+  }
+
+  /* Colors */
+  .col-teal   { background:#0f2a2a; border:1.5px solid #00c2a0; }
+  .col-blue   { background:#0f1e33; border:1.5px solid #3b82f6; }
+  .col-purple { background:#1a1030; border:1.5px solid #8b5cf6; }
+  .col-amber  { background:#221800; border:1.5px solid #f59e0b; }
+  .col-green  { background:#0d2218; border:1.5px solid #22c55e; }
+  .col-red    { background:#220d0d; border:1.5px solid #ef4444; }
+  .col-slate  { background:#141925; border:1.5px solid #475569; }
+
+  .tag-teal   { background:#00c2a022; color:#00c2a0; }
+  .tag-blue   { background:#3b82f622; color:#3b82f6; }
+  .tag-purple { background:#8b5cf622; color:#8b5cf6; }
+  .tag-amber  { background:#f59e0b22; color:#f59e0b; }
+  .tag-green  { background:#22c55e22; color:#22c55e; }
+  .tag-red    { background:#ef444422; color:#ef4444; }
+  .tag-slate  { background:#47556922; color:#94a3b8; }
+
+  /* ── ARROW ── */
+  .arrow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    height: 44px;
+    position: relative;
+  }
+  .arrow-shaft {
+    width: 1.5px;
+    flex: 1;
+    background: #2e3a55;
+  }
+  .arrow-head {
+    width: 0; height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 7px solid #2e3a55;
+  }
+  .arrow-label {
+    position: absolute;
+    left: calc(50% + 10px);
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 0.62rem;
+    color: #455070;
+    white-space: nowrap;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* coloured arrows */
+  .arrow.teal .arrow-shaft   { background:#00c2a055; }
+  .arrow.teal .arrow-head    { border-top-color:#00c2a055; }
+  .arrow.blue .arrow-shaft   { background:#3b82f655; }
+  .arrow.blue .arrow-head    { border-top-color:#3b82f655; }
+  .arrow.purple .arrow-shaft { background:#8b5cf655; }
+  .arrow.purple .arrow-head  { border-top-color:#8b5cf655; }
+  .arrow.amber .arrow-shaft  { background:#f59e0b55; }
+  .arrow.amber .arrow-head   { border-top-color:#f59e0b55; }
+  .arrow.green .arrow-shaft  { background:#22c55e55; }
+  .arrow.green .arrow-head   { border-top-color:#22c55e55; }
+
+  /* ── WIDE single box ── */
+  .w-full { width: 100%; }
+  .w-lg   { width: 680px; }
+  .w-md   { width: 500px; }
+  .w-sm   { width: 300px; }
+
+  /* ── SPLIT ROW ── */
+  .split {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    width: 100%;
+    justify-content: center;
+  }
+  .split .col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    flex: 1;
+  }
+
+  /* ── DIAMOND decision ── */
+  .diamond-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .diamond {
+    width: 110px; height: 110px;
+    background: #221800;
+    border: 1.5px solid #f59e0b;
+    transform: rotate(45deg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+  }
+  .diamond-text {
+    transform: rotate(-45deg);
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: #f59e0b;
+    text-align: center;
+    line-height: 1.35;
+    letter-spacing: 0.03em;
+  }
+
+  /* ── MERGE ARROWS (branching) ── */
+  .branch-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    width: 100%;
+    gap: 0;
+    position: relative;
+    height: 52px;
+  }
+
+  /* horizontal connector line above 3 columns */
+  .h-line {
+    position: absolute;
+    top: 0; height: 1.5px;
+    background: #2e3a55;
+  }
+  .v-drop {
+    position: absolute;
+    top: 0;
+    width: 1.5px;
+    background: #2e3a55;
+  }
+  .v-drop-head {
+    position: absolute;
+    width: 0; height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 7px solid #2e3a55;
+    transform: translateX(-50%);
+  }
+
+  /* three-way label */
+  .branch-label {
+    position: absolute;
+    font-size: 0.6rem;
+    color: #455070;
+    font-family: 'JetBrains Mono', monospace;
+    white-space: nowrap;
+    top: -14px;
+  }
+
+  /* ── three column outputs ── */
+  .three-cols {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 14px;
+    width: 100%;
+  }
+  .three-cols .col-inner {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  /* ── merge back ── */
+  .merge-row {
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    width: 100%;
+    position: relative;
+    height: 52px;
+  }
+
+  /* section divider label */
+  .section-lbl {
+    font-size: 0.62rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #3a4a6a;
+    margin-bottom: 10px;
+    align-self: flex-start;
+    padding-left: 4px;
+  }
+</style>
+</head>
+<body>
+<div class="canvas">
+
+  <div class="title-block">
+    <h1>Goat Weight Estimator — System Flowchart</h1>
+    <p>app.py · segementer.py · depth_estimator.py</p>
+  </div>
+
+  <div class="flow">
+
+    <!-- ① USER UPLOAD -->
+    <div class="box col-teal w-lg">
+      <div class="box-title"><span class="icon">⬆</span> User Upload · Streamlit UI</div>
+      <div class="box-sub">
+        <code>st.sidebar.selectbox</code> → choose mode &nbsp;·&nbsp;
+        <code>st.file_uploader</code> → image (jpg/png) or video (mp4/avi/mov/mkv)
+      </div>
+      <span class="tag tag-teal">app.py</span>
+    </div>
+
+    <div class="arrow teal"><div class="arrow-shaft"></div><div class="arrow-head"></div></div>
+
+    <!-- ② TEMP FILE -->
+    <div class="box col-slate w-lg">
+      <div class="box-title"><span class="icon">📁</span> Temp File Write</div>
+      <div class="box-sub">
+        <code>tempfile.NamedTemporaryFile(delete=False, suffix=".jpg/.mp4")</code><br>
+        Save upload bytes to disk &nbsp;·&nbsp; path passed to model functions
+      </div>
+      <span class="tag tag-slate">app.py</span>
+    </div>
+
+    <div class="arrow"><div class="arrow-shaft"></div><div class="arrow-head"></div></div>
+
+    <!-- ③ MODEL LOADING -->
+    <div class="box col-purple w-lg">
+      <div class="box-title"><span class="icon">🧠</span> Model Loading · <code>@st.cache_resource</code></div>
+      <div class="box-sub">
+        <b style="color:#c4b5fd">YOLO</b> &nbsp;<code>ultralytics.YOLO("model.pt")</code> → global singleton &nbsp;·&nbsp;
+        <b style="color:#c4b5fd">MiDaS</b> &nbsp;<code>torch.hub.load("intel-isl/MiDaS", "DPT_Large")</code><br>
+        device = <code>cuda</code> if available else <code>cpu</code> &nbsp;·&nbsp; transforms = <code>dpt_transform</code> &nbsp;·&nbsp; loaded once, reused every call
+      </div>
+      <span class="tag tag-purple">segementer.py · depth_estimator.py</span>
+    </div>
+
+    <div class="arrow amber"><div class="arrow-shaft"></div><div class="arrow-head"></div><div class="arrow-label">mode select</div></div>
+
+    <!-- ④ DECISION DIAMOND -->
+    <div class="diamond-wrap">
+      <div class="diamond">
+        <div class="diamond-text">MODE<br>SELECT</div>
+      </div>
+    </div>
+
+    <!-- BRANCH DOWN to 3 columns -->
+    <div style="position:relative; width:100%; height:52px;">
+      <!-- horizontal line spanning all 3 col centres -->
+      <!-- left col centre ~150px, mid ~450px, right ~750px -->
+      <div style="position:absolute; top:0; left:150px; right:150px; height:1.5px; background:#2e3a55;"></div>
+      <!-- drops -->
+      <div style="position:absolute; top:0; left:150px; width:1.5px; height:52px; background:#2e3a55;"></div>
+      <div style="position:absolute; top:0; left:50%; width:1.5px; height:52px; background:#2e3a55; transform:translateX(-50%)"></div>
+      <div style="position:absolute; top:0; right:150px; width:1.5px; height:52px; background:#2e3a55;"></div>
+      <!-- arrowheads -->
+      <div style="position:absolute; bottom:0; left:150px; transform:translateX(-50%); width:0; height:0; border-left:5px solid transparent; border-right:5px solid transparent; border-top:7px solid #2e3a55;"></div>
+      <div style="position:absolute; bottom:0; left:50%; transform:translateX(-50%); width:0; height:0; border-left:5px solid transparent; border-right:5px solid transparent; border-top:7px solid #2e3a55;"></div>
+      <div style="position:absolute; bottom:0; right:150px; transform:translateX(50%); width:0; height:0; border-left:5px solid transparent; border-right:5px solid transparent; border-top:7px solid #2e3a55;"></div>
+      <!-- mode labels -->
+      <span style="position:absolute; top:6px; left:60px; font-size:0.6rem; color:#f59e0b; font-family:monospace;">Mode 1</span>
+      <span style="position:absolute; top:6px; left:calc(50% - 22px); font-size:0.6rem; color:#f59e0b; font-family:monospace;">Mode 2</span>
+      <span style="position:absolute; top:6px; right:60px; font-size:0.6rem; color:#f59e0b; font-family:monospace;">Mode 3</span>
+    </div>
+
+    <!-- THREE COLUMNS -->
+    <div class="three-cols">
+
+      <!-- MODE 1 -->
+      <div class="col-inner">
+        <div class="box col-blue">
+          <div class="box-title"><span class="icon">🖼</span> segment_image()</div>
+          <div class="box-sub">
+            <code>yolo_model(image_path)</code><br>
+            <code>result.plot(labels=False, boxes=False)</code><br>
+            → annotated PIL image
+          </div>
+          <span class="tag tag-blue">segementer.py</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;height:32px;">
+          <div style="width:1.5px;flex:1;background:#3b82f655;"></div>
+          <div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid #3b82f655;"></div>
+        </div>
+        <div class="box col-blue">
+          <div class="box-title"><span class="icon">🎭</span> Build Seg Mask</div>
+          <div class="box-sub">
+            <code>result.masks.data → numpy</code><br>
+            <code>cv2.resize</code> per mask<br>
+            <code>np.maximum</code> → combined binary mask
+          </div>
+          <span class="tag tag-blue">segementer.py</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;height:32px;">
+          <div style="width:1.5px;flex:1;background:#3b82f655;"></div>
+          <div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid #3b82f655;"></div>
+        </div>
+        <div class="box col-purple">
+          <div class="box-title"><span class="icon">📡</span> estimate_depth_heatmap()</div>
+          <div class="box-sub">
+            <code>cv2.imread → RGB</code><br>
+            <code>dpt_transform(img).to(device)</code><br>
+            <code>midas(input_batch)</code><br>
+            <code>F.interpolate bicubic</code> → raw_depth
+          </div>
+          <span class="tag tag-purple">depth_estimator.py</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;height:32px;">
+          <div style="width:1.5px;flex:1;background:#8b5cf655;"></div>
+          <div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid #8b5cf655;"></div>
+        </div>
+        <div class="box col-purple">
+          <div class="box-title"><span class="icon">⚖️</span> calc_volume_weight_proxy()</div>
+          <div class="box-sub">
+            <code>masked = depth × (mask &gt; 0)</code><br>
+            <code>volume = np.sum(masked)</code><br>
+            <code>weight = volume × K</code><br>
+            K = <code>0.000016</code> (image)
+          </div>
+          <span class="tag tag-purple">depth_estimator.py</span>
+        </div>
+      </div>
+
+      <!-- MODE 2 -->
+      <div class="col-inner">
+        <div class="box col-blue">
+          <div class="box-title"><span class="icon">🔍</span> detect_goats_in_image()</div>
+          <div class="box-sub">
+            <code>yolo_model(image_path)</code><br>
+            <code>conf_threshold = 0.3</code><br>
+            <code>result.plot(masks=False)</code>
+          </div>
+          <span class="tag tag-blue">segementer.py</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;height:32px;">
+          <div style="width:1.5px;flex:1;background:#3b82f655;"></div>
+          <div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid #3b82f655;"></div>
+        </div>
+        <div class="box col-blue">
+          <div class="box-title"><span class="icon">📦</span> Filter Detections</div>
+          <div class="box-sub">
+            <code>boxes.xyxy, .conf, .cls</code><br>
+            skip if <code>conf &lt; 0.3</code><br>
+            collect <code>list[dict]</code>:<br>
+            box · conf · cls per goat
+          </div>
+          <span class="tag tag-blue">segementer.py</span>
+        </div>
+      </div>
+
+      <!-- MODE 3 -->
+      <div class="col-inner">
+        <div class="box col-amber">
+          <div class="box-title"><span class="icon">🎬</span> cv2.VideoCapture</div>
+          <div class="box-sub">
+            read fps · width · height<br>
+            <code>cv2.VideoWriter("mp4v")</code><br>
+            <code>while ret: frame loop</code>
+          </div>
+          <span class="tag tag-amber">segementer.py</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;height:32px;">
+          <div style="width:1.5px;flex:1;background:#f59e0b55;"></div>
+          <div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid #f59e0b55;"></div>
+        </div>
+        <div class="box col-blue">
+          <div class="box-title"><span class="icon">🎭</span> YOLO per Frame</div>
+          <div class="box-sub">
+            <code>yolo_model(frame)</code><br>
+            masks + bounding boxes<br>
+            <code>np.maximum</code> → combined_mask<br>
+            draw <code>cv2.rectangle</code>
+          </div>
+          <span class="tag tag-blue">segementer.py</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;height:32px;">
+          <div style="width:1.5px;flex:1;background:#3b82f655;"></div>
+          <div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid #3b82f655;"></div>
+        </div>
+        <div class="box col-green">
+          <div class="box-title"><span class="icon">🟩</span> Green Mask Overlay</div>
+          <div class="box-sub">
+            <code>_apply_green_mask_overlay()</code><br>
+            alpha blend <code>0.45</code><br>
+            <code>cv2.drawContours</code> white edge
+          </div>
+          <span class="tag tag-green">segementer.py</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;height:32px;">
+          <div style="width:1.5px;flex:1;background:#22c55e55;"></div>
+          <div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid #22c55e55;"></div>
+        </div>
+        <div class="box col-amber">
+          <div class="box-title"><span class="icon">⏱</span> Weight Sample? (every 15f)</div>
+          <div class="box-sub">
+            <code>frame_idx % 15 == 0</code><br>
+            only if <code>enable_weight=True</code><br>
+            write tmp frame → depth → weight<br>
+            K = <code>0.00016</code> (video)
+          </div>
+          <span class="tag tag-amber">segementer.py</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;height:32px;">
+          <div style="width:1.5px;flex:1;background:#f59e0b55;"></div>
+          <div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid #f59e0b55;"></div>
+        </div>
+        <div class="box col-amber">
+          <div class="box-title"><span class="icon">💾</span> out.write(frame)</div>
+          <div class="box-sub">
+            overlay weight label (cyan)<br>
+            dark pill background<br>
+            append to <code>weight_estimates[]</code>
+          </div>
+          <span class="tag tag-amber">segementer.py</span>
+        </div>
+      </div>
+
+    </div><!-- end three-cols -->
+
+    <!-- MERGE back -->
+    <div style="position:relative; width:100%; height:52px; margin-top:0;">
+      <div style="position:absolute; bottom:0; left:150px; right:150px; height:1.5px; background:#2e3a55;"></div>
+      <div style="position:absolute; bottom:0; left:150px; width:1.5px; height:52px; background:#2e3a55;"></div>
+      <div style="position:absolute; bottom:0; left:50%; width:1.5px; height:52px; background:#2e3a55; transform:translateX(-50%)"></div>
+      <div style="position:absolute; bottom:0; right:150px; width:1.5px; height:52px; background:#2e3a55;"></div>
+      <!-- merge arrow down from centre -->
+      <div style="position:absolute; bottom:0; left:50%; width:1.5px; height:52px; background:#2e3a55; transform:translateX(-50%)"></div>
+    </div>
+
+    <div class="arrow"><div class="arrow-shaft"></div><div class="arrow-head"></div><div class="arrow-label">return to app.py</div></div>
+
+    <!-- ⑤ STREAMLIT RENDER -->
+    <div class="box col-teal w-lg">
+      <div class="box-title"><span class="icon">🖥</span> Streamlit Render · app.py</div>
+      <div class="box-sub">
+        <b style="color:#5eead4">Mode 1 →</b>
+        <code>st.image(seg)</code> &nbsp;
+        <code>st.pyplot(depth heatmap, cmap=magma)</code> &nbsp;
+        <code>st.success(weight_kg)</code><br>
+        <b style="color:#5eead4">Mode 2 →</b>
+        <code>st.image(annotated)</code> &nbsp;
+        <code>st.write</code> per detection: box · confidence<br>
+        <b style="color:#5eead4">Mode 3 →</b>
+        <code>st.video(output_path)</code> &nbsp;
+        <code>st.download_button(.mp4)</code> &nbsp;
+        avg weight + N samples
+      </div>
+      <span class="tag tag-teal">app.py</span>
+    </div>
+
+    <div class="arrow red"><div class="arrow-shaft" style="background:#ef444455"></div><div class="arrow-head" style="border-top-color:#ef444455;"></div></div>
+
+    <!-- ⑥ CLEANUP -->
+    <div class="box col-red w-lg">
+      <div class="box-title"><span class="icon">🗑</span> Cleanup · try/finally</div>
+      <div class="box-sub">
+        <code>os.remove(temp_image_path)</code> &nbsp;·&nbsp;
+        <code>os.remove(temp_frame_path)</code> &nbsp;·&nbsp;
+        <code>cap.release()</code> &nbsp;·&nbsp;
+        <code>out.release()</code>
+      </div>
+      <span class="tag tag-red">app.py · segementer.py</span>
+    </div>
+
+  </div><!-- end flow -->
+
+  <!-- footer -->
+  <div style="margin-top:32px; font-size:0.65rem; color:#2e3a55; font-family:monospace; line-height:2;">
+    YOLO model.pt (custom) &nbsp;·&nbsp; MiDaS DPT_Large &nbsp;·&nbsp;
+    K image=0.000016 · K video=0.00016 &nbsp;·&nbsp; sample interval=15 frames &nbsp;·&nbsp;
+    resize target=640px (image mode)
+  </div>
+
+</div>
+</body>
+</html>

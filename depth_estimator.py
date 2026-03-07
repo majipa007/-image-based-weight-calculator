@@ -105,7 +105,9 @@ def calculate_goat_volume_and_weight_proxy(raw_depth_map, segmentation_mask, sca
     Args:
         raw_depth_map (np.array): The raw depth map from MiDaS.
         segmentation_mask (np.array): A binary mask of the goat (1 for goat, 0 for background).
-        scaling_factor_K (float): Arbitrary scaling factor for weight calculation.
+        scaling_factor_K (float): Scaling factor for weight calculation.
+                                   Default 0.000016 for images.
+                                   Pass 0.00016 for video frames (10x correction).
     Returns:
         tuple: (volume_proxy, weight_kg_proxy) or (None, None) if inputs are invalid.
     """
@@ -114,26 +116,19 @@ def calculate_goat_volume_and_weight_proxy(raw_depth_map, segmentation_mask, sca
         return None, None
 
     try:
-        # Ensure mask and depth map have compatible shapes
-        # The segmentation mask from segementer.py is already resized to original image dimensions
-        # The raw_depth_map from estimate_depth_heatmap is also resized to original image dimensions
-        # So, their shapes should match. If not, a warning is logged.
         if raw_depth_map.shape != segmentation_mask.shape:
-            logging.warning(f"Depth map shape {raw_depth_map.shape} and segmentation mask shape {segmentation_mask.shape} do not match. This might lead to incorrect results.")
-            # Attempt to resize mask to match depth map if necessary, though ideally they should match
-            segmentation_mask = cv2.resize(segmentation_mask, 
-                                           (raw_depth_map.shape[1], raw_depth_map.shape[0]), 
-                                           interpolation=cv2.INTER_NEAREST)
+            logging.warning(
+                f"Depth map shape {raw_depth_map.shape} and segmentation mask shape "
+                f"{segmentation_mask.shape} do not match. Resizing mask."
+            )
+            segmentation_mask = cv2.resize(
+                segmentation_mask,
+                (raw_depth_map.shape[1], raw_depth_map.shape[0]),
+                interpolation=cv2.INTER_NEAREST
+            )
 
-
-        # Apply the segmentation mask to the depth map
-        # Only consider depth values where the mask is active (goat pixels)
         masked_depth_values = raw_depth_map * (segmentation_mask > 0)
-
-        # Calculate the volume proxy by summing the masked depth values
         volume_proxy = np.sum(masked_depth_values)
-
-        # Calculate the weight proxy using the arbitrary scaling factor
         weight_kg_proxy = volume_proxy * scaling_factor_K
 
         logging.info(f"Volume Proxy: {volume_proxy:.2f}, Weight Proxy: {weight_kg_proxy:.2f} kg")
@@ -142,11 +137,3 @@ def calculate_goat_volume_and_weight_proxy(raw_depth_map, segmentation_mask, sca
     except Exception as e:
         logging.error(f"Error calculating volume and weight proxy: {e}")
         return None, None
-
-# The standalone execution part is removed as this file will now primarily be imported.
-# If you need to test it standalone, you can add a __main__ block:
-# if __name__ == "__main__":
-#     load_midas_model()
-#     fig, raw_depth = estimate_depth_heatmap("test_images/1.jpg")
-#     if fig:
-#         plt.show()
