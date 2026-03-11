@@ -99,6 +99,39 @@ def estimate_depth_heatmap(image_path):
         logging.error(f"Error during depth prediction: {e}")
         return None, None
 
+def estimate_depth_map_from_rgb(rgb_image):
+    """
+    Estimates a raw depth map from an RGB numpy image.
+    Args:
+        rgb_image (np.array): RGB image array (H, W, 3), dtype uint8 preferred.
+    Returns:
+        np.array: Raw depth map with shape (H, W), or None if an error occurs.
+    """
+    if midas is None or transform is None or device is None:
+        try:
+            load_midas_model()
+        except Exception:
+            return None
+
+    if rgb_image is None or len(rgb_image.shape) != 3 or rgb_image.shape[2] != 3:
+        logging.error("Invalid RGB image passed to estimate_depth_map_from_rgb.")
+        return None
+
+    try:
+        input_batch = transform(rgb_image).to(device)
+        with torch.no_grad():
+            prediction = midas(input_batch)
+            prediction = torch.nn.functional.interpolate(
+                prediction.unsqueeze(1),
+                size=rgb_image.shape[:2],
+                mode="bicubic",
+                align_corners=False,
+            ).squeeze()
+        return prediction.cpu().numpy()
+    except Exception as e:
+        logging.error(f"Error during in-memory depth prediction: {e}")
+        return None
+
 def calculate_goat_volume_and_weight_proxy(raw_depth_map, segmentation_mask, scaling_factor_K=0.000016):
     """
     Calculates a volume proxy and a weight proxy for the goat.

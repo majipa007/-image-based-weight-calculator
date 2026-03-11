@@ -7,6 +7,8 @@ This project provides an image-based solution for detecting goats, estimating th
 *   **Goat Segmentation:** Accurately identifies and segments goats in uploaded images using a YOLOv8n-seg model.
 *   **Depth Estimation:** Generates a depth heatmap for the uploaded image using a MiDaS model.
 *   **Volume and Weight Proxy Estimation:** Calculates an approximate volume and weight for detected goats based on the segmented area and estimated depth.
+*   **Video Tracking + Per-Goat Weight Proxy:** Tracks goats across video frames, applies segmentation masks per tracked goat, and computes frame-wise weight proxy estimates per track ID.
+*   **Deferred Video Weighting with Postgres:** Stores segmented goat crops and masks in Postgres, then computes final weights only from top 3-5 largest masks per goat at the end of processing.
 *   **User-Friendly Interface:** A simple web application built with Streamlit for easy image uploads and result display.
 
 ## Project Structure
@@ -14,6 +16,9 @@ This project provides an image-based solution for detecting goats, estimating th
 *   `app.py`: The main Streamlit application. It handles image uploads, resizing, temporary file management, orchestrates calls to the segmentation and depth estimation modules, and displays all results.
 *   `segementer.py`: Contains the core logic for goat segmentation. It loads a cached YOLOv8n-seg model, performs predictions, and processes the results to generate a segmented image and a binary segmentation mask.
 *   `depth_estimator.py`: Manages the depth estimation process. It loads a cached MiDaS model, estimates depth from the input image, generates a depth heatmap, and provides a function to calculate volume and weight proxies using the raw depth map and segmentation mask.
+*   `db_store.py`: Postgres helper for creating runs, storing goat frame candidates, selecting top masks per goat, and saving final results.
+*   `docker-compose.yml`: Starts local Postgres for video candidate/result storage.
+*   `db/init.sql`: Database schema initialization script.
 *   `model.pt`: The pre-trained YOLOv8n-seg model weights used for goat segmentation.
 *   `requirements.txt`: Lists all the Python dependencies required to run the project, with pinned versions for reproducibility.
 
@@ -49,6 +54,19 @@ pip install -r requirements.txt
 
 Ensure you have the `model.pt` file in the root directory of your project. This file contains the pre-trained weights for the YOLO segmentation model. If it's not present, the segmentation module will fail to load.
 
+### 5. Start Postgres (for video mode)
+
+```bash
+docker compose up -d
+```
+
+Default DB settings used by the app:
+* Host: `localhost`
+* Port: `5432`
+* Database: `goat_weight`
+* User: `goat_user`
+* Password: `goat_pass`
+
 ## How to Run the Application
 
 Once you have completed the setup, you can run the Streamlit application:
@@ -62,9 +80,13 @@ This command will open the application in your web browser, usually at `http://l
 ## Usage
 
 1.  Open the Streamlit application in your browser.
-2.  Click on "Choose an image..." to upload a JPG, JPEG, or PNG image containing one or more goats.
-3.  The application will display the original image, then process it to perform segmentation and depth estimation.
-4.  You will see the segmented image, a depth estimation heatmap, and the calculated volume and weight proxies.
+2.  Select input type:
+    * `Image` for single-image segmentation + depth + proxy weight.
+    * `Video` for tracking goats over time. During processing, goat crops/masks are stored in Postgres. Final weight per goat is computed only from top 3-5 largest masks.
+3.  Upload the corresponding file and run processing.
+4.  Review:
+    * Annotated output video with tracking IDs.
+    * Per unique goat ID: 3 sample images and one final weight proxy.
 
 ## Technical Deep Dive
 
@@ -111,4 +133,3 @@ The weight estimation provided by this model is a **proxy** and is based on a si
 ## Contributing
 
 If you'd like to contribute to this project, please feel free to fork the repository, create a new branch, and submit a pull request.
-
