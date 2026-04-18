@@ -1,25 +1,30 @@
 import streamlit as st
 from PIL import Image
 import os
-import tempfile # Import tempfile for secure temporary file handling
+import tempfile  # Import tempfile for secure temporary file handling
 import cv2
 import numpy as np
 from segementer import segment_image, load_yolo_model, track_goats_in_video
-from depth_estimator import estimate_depth_heatmap, load_midas_model, calculate_goat_volume_and_weight_proxy
+from depth_estimator import (
+    estimate_depth_heatmap,
+    load_midas_model,
+    calculate_goat_volume_and_weight_proxy,
+    DEFAULT_SCALING_FACTOR_K,
+)
 import matplotlib.pyplot as plt
 import logging
 
 # Configure logging for the app
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 
 st.set_page_config(layout="wide")
 st.title("Goat Weight Detection and Depth Estimation")
 
 # Define a target maximum side for image resizing
-TARGET_MAX_SIDE = 640 # pixels
+TARGET_MAX_SIDE = 640  # pixels
+
 
 # Load MiDaS model once when the app starts
 @st.cache_resource
@@ -32,6 +37,7 @@ def cached_load_midas_model():
         logging.error(f"Failed to load depth estimation model: {e}")
         return False
 
+
 # Load YOLO model once when the app starts
 @st.cache_resource
 def cached_load_yolo_model():
@@ -43,6 +49,7 @@ def cached_load_yolo_model():
         logging.error(f"Failed to load segmentation model: {e}")
         return False
 
+
 # Check if both models loaded successfully
 if not cached_load_midas_model():
     st.stop()
@@ -50,15 +57,30 @@ if not cached_load_yolo_model():
     st.stop()
 
 input_mode = st.radio("Select input type", ["Image", "Video"], horizontal=True)
+orientation_mode = st.radio(
+    "Orientation mode",
+    ["Landscape (default)", "Portrait (swap X/Y)"],
+    horizontal=True,
+)
+is_portrait_mode = orientation_mode == "Portrait (swap X/Y)"
 
 st.sidebar.title("Postgres Settings")
 db_host = st.sidebar.text_input("Host", value=os.getenv("PGHOST", "localhost"))
-db_port = st.sidebar.number_input("Port", min_value=1, max_value=65535, value=int(os.getenv("PGPORT", "5432")))
-db_name = st.sidebar.text_input("Database", value=os.getenv("PGDATABASE", "goat_weight"))
+db_port = st.sidebar.number_input(
+    "Port", min_value=1, max_value=65535, value=int(os.getenv("PGPORT", "5432"))
+)
+db_name = st.sidebar.text_input(
+    "Database", value=os.getenv("PGDATABASE", "goat_weight")
+)
 db_user = st.sidebar.text_input("User", value=os.getenv("PGUSER", "goat_user"))
-db_password = st.sidebar.text_input("Password", value=os.getenv("PGPASSWORD", "goat_pass"), type="password")
+db_password = st.sidebar.text_input(
+    "Password", value=os.getenv("PGPASSWORD", "goat_pass"), type="password"
+)
 
-def overlay_mask_on_image_bytes(image_jpg_bytes, mask_png_bytes, mask_color=(0, 255, 0), alpha=0.35):
+
+def overlay_mask_on_image_bytes(
+    image_jpg_bytes, mask_png_bytes, mask_color=(0, 255, 0), alpha=0.35
+):
     image_arr = np.frombuffer(image_jpg_bytes, dtype=np.uint8)
     mask_arr = np.frombuffer(mask_png_bytes, dtype=np.uint8)
 
@@ -78,8 +100,11 @@ def overlay_mask_on_image_bytes(image_jpg_bytes, mask_png_bytes, mask_color=(0, 
         return image_jpg_bytes
     return encoded.tobytes()
 
-def process_image(uploaded_image_file):
+
+def process_image(uploaded_image_file, portrait_mode=False):
     original_image = Image.open(uploaded_image_file)
+    if portrait_mode:
+        original_image = original_image.transpose(Image.Transpose.ROTATE_270)
     st.image(original_image, caption="Original Image", use_container_width=True)
     st.write("")
 
@@ -95,7 +120,9 @@ def process_image(uploaded_image_file):
         new_width = int(width * ratio)
 
     resized_image = original_image.resize((new_width, new_height), Image.LANCZOS)
-    st.info(f"Original image {width}x{height}. Resized to {new_width}x{new_height} for consistent resolution.")
+    st.info(
+        f"Original image {width}x{height}. Resized to {new_width}x{new_height} for consistent resolution."
+    )
 
     # Use tempfile for robust temporary file handling
     temp_image_path = None
@@ -103,7 +130,7 @@ def process_image(uploaded_image_file):
         with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_file:
             temp_image_path = temp_file.name
             resized_image.save(temp_image_path)
-        
+
         col1, col2 = st.columns(2)
 
         segmentation_mask = None
@@ -114,10 +141,12 @@ def process_image(uploaded_image_file):
             segmented_img, segmentation_mask = segment_image(temp_image_path)
 
             if segmented_img:
-                st.image(segmented_img, caption="Segmented Image", use_container_width=True)
+                st.image(
+                    segmented_img, caption="Segmented Image", use_container_width=True
+                )
             else:
                 st.write("No goats detected or an error occurred during segmentation.")
-        
+
         with col2:
             st.write("### Depth Estimation")
             depth_heatmap_fig, raw_depth_map = estimate_depth_heatmap(temp_image_path)
@@ -127,29 +156,40 @@ def process_image(uploaded_image_file):
                 plt.close(depth_heatmap_fig)
             else:
                 st.write("Could not estimate depth or an error occurred.")
-        
+
         st.write("---")
 
         if segmentation_mask is not None and raw_depth_map is not None:
             st.write("### Volume and Weight Estimation (Proxy)")
-            volume_proxy, weight_kg_proxy = calculate_goat_volume_and_weight_proxy(raw_depth_map, segmentation_mask)
+            volume_proxy, weight_kg_proxy = calculate_goat_volume_and_weight_proxy(
+                raw_depth_map, segmentation_mask
+            )
 
             if volume_proxy is not None and weight_kg_proxy is not None:
-                st.success(f"**Estimated Volume Proxy:** {volume_proxy:.2f} (arbitrary units)")
-                st.success(f"**Estimated Weight Proxy:** {weight_kg_proxy:.2f} kg (approximate)")
-                st.info("Note: These are proxy values due to the lack of camera calibration data and are highly approximate.")
+                st.success(
+                    f"**Estimated Volume Proxy:** {volume_proxy:.2f} (arbitrary units)"
+                )
+                st.success(
+                    f"**Estimated Weight Proxy:** {weight_kg_proxy:.2f} kg (approximate)"
+                )
+                st.info(
+                    "Note: These are proxy values due to the lack of camera calibration data and are highly approximate."
+                )
             else:
                 st.error("Could not calculate volume and weight proxies.")
         else:
-            st.warning("Segmentation mask or raw depth map not available for volume/weight calculation.")
-    
+            st.warning(
+                "Segmentation mask or raw depth map not available for volume/weight calculation."
+            )
+
     finally:
         # Ensure temporary file is cleaned up
         if temp_image_path and os.path.exists(temp_image_path):
             os.remove(temp_image_path)
             logging.info(f"Cleaned up temporary file: {temp_image_path}")
 
-def process_video(uploaded_video_file):
+
+def process_video(uploaded_video_file, portrait_mode=False):
     conf_threshold = st.slider("Tracking confidence threshold", 0.1, 0.95, 0.5, 0.05)
     resize_scale = st.slider("Video resize scale", 0.2, 1.0, 0.4, 0.05)
     top_k = st.slider("Top masks used per goat (for final weight)", 3, 5, 3, 1)
@@ -183,26 +223,34 @@ def process_video(uploaded_video_file):
                     top_k=top_k,
                     conf_threshold=conf_threshold,
                     scale=resize_scale,
+                    orientation_mode="portrait" if portrait_mode else "landscape",
                 )
 
             if output_path is None:
-                st.error("Video processing failed. Check Postgres settings and model loading.")
+                st.error(
+                    "Video processing failed. Check Postgres settings and model loading."
+                )
                 return
 
+            summary = summary or []
             st.success(f"Processed {frames_processed} frames. Run ID: {run_id}")
             with open(output_path, "rb") as f:
                 st.video(f.read())
 
             st.write("### Per-Goat Final Results")
+            summary_by_id = {}
             if summary:
                 for item in summary:
                     goat_id = item["goat_id"]
+                    summary_by_id[goat_id] = item
                     final_weight = item["final_weight_proxy_kg"]
                     samples_used = item["samples_used"]
                     preview_samples = item.get("preview_samples", [])
 
                     st.write(f"#### Goat ID {goat_id}")
-                    st.write(f"Final Weight Proxy: **{final_weight:.2f} kg** (from {samples_used} top-mask samples)")
+                    st.write(
+                        f"Final Weight Proxy: **{final_weight:.2f} kg** (from {samples_used} top-mask samples)"
+                    )
 
                     img_cols = st.columns(3)
                     for idx, col in enumerate(img_cols):
@@ -212,13 +260,64 @@ def process_video(uploaded_video_file):
                                 sample["image_jpg"],
                                 sample["mask_png"],
                             )
-                            col.image(overlaid, caption=f"Sample {idx + 1} (mask overlaid)", use_container_width=True)
+                            col.image(
+                                overlaid,
+                                caption=f"Sample {idx + 1} (mask overlaid)",
+                                use_container_width=True,
+                            )
                         else:
                             col.write("No image")
             else:
                 st.warning("No tracked goat weights were produced.")
 
-            st.info("Weight values shown in video mode are proxy estimates (not calibrated true weights).")
+            st.info(
+                "Weight values shown in video mode are proxy estimates (not calibrated true weights)."
+            )
+
+            if summary:
+                with st.expander(
+                    "Calibrator mode (compute K from known goat weight)", expanded=False
+                ):
+                    goat_ids = [int(item["goat_id"]) for item in summary]
+                    selected_goat_id = st.selectbox(
+                        "Reference Goat ID",
+                        goat_ids,
+                        key="calib_ref_goat_id",
+                    )
+                    reference_weight_kg = st.number_input(
+                        "Known real weight for selected goat (kg)",
+                        min_value=0.1,
+                        value=30.0,
+                        step=0.1,
+                        key="calib_ref_weight_kg",
+                    )
+
+                    selected_proxy_weight = summary_by_id[selected_goat_id][
+                        "final_weight_proxy_kg"
+                    ]
+                    if selected_proxy_weight > 0:
+                        calibration_ratio = reference_weight_kg / selected_proxy_weight
+                        calibrated_k = DEFAULT_SCALING_FACTOR_K * calibration_ratio
+
+                        st.success(
+                            f"Calibrated K = {calibrated_k:.10f} "
+                            f"(base {DEFAULT_SCALING_FACTOR_K:.10f} x ratio {calibration_ratio:.4f})"
+                        )
+
+                        st.write("### Calibrated per-goat weights")
+                        for item in summary:
+                            calibrated_weight = (
+                                item["final_weight_proxy_kg"] * calibration_ratio
+                            )
+                            st.write(
+                                f"Goat ID {item['goat_id']}: "
+                                f"**{calibrated_weight:.2f} kg** "
+                                f"(proxy was {item['final_weight_proxy_kg']:.2f} kg)"
+                            )
+                    else:
+                        st.error(
+                            "Reference goat proxy weight is zero, cannot calibrate K."
+                        )
     finally:
         if temp_input_path and os.path.exists(temp_input_path):
             os.remove(temp_input_path)
@@ -227,11 +326,16 @@ def process_video(uploaded_video_file):
             os.remove(temp_output_path)
             logging.info(f"Cleaned up temporary output video: {temp_output_path}")
 
+
 if input_mode == "Image":
-    uploaded_image = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"], key="image_uploader")
+    uploaded_image = st.file_uploader(
+        "Choose an image...", type=["jpg", "jpeg", "png"], key="image_uploader"
+    )
     if uploaded_image is not None:
-        process_image(uploaded_image)
+        process_image(uploaded_image, portrait_mode=is_portrait_mode)
 else:
-    uploaded_video = st.file_uploader("Choose a video...", type=["mp4", "mov", "avi", "mkv"], key="video_uploader")
+    uploaded_video = st.file_uploader(
+        "Choose a video...", type=["mp4", "mov", "avi", "mkv"], key="video_uploader"
+    )
     if uploaded_video is not None:
-        process_video(uploaded_video)
+        process_video(uploaded_video, portrait_mode=is_portrait_mode)

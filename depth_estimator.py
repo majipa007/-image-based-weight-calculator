@@ -4,19 +4,22 @@ import matplotlib.pyplot as plt
 import logging
 import time
 import warnings
-import numpy as np # Added for array operations
-warnings.filterwarnings('ignore')
+import numpy as np  # Added for array operations
+
+warnings.filterwarnings("ignore")
 
 # Configure logging for the module
 logging.basicConfig(
     level=logging.INFO,  # Set minimum log level (INFO, WARNING, ERROR, CRITICAL)
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 
 # Global model and transforms to avoid reloading on every function call
 midas = None
 transform = None
 device = None
+DEFAULT_SCALING_FACTOR_K = 0.000045
+
 
 def load_midas_model():
     """Loads the MiDaS model and transforms, and sets up the device."""
@@ -26,7 +29,11 @@ def load_midas_model():
         try:
             model_type = "DPT_Large"
             midas = torch.hub.load("intel-isl/MiDaS", model_type)
-            device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+            device = (
+                torch.device("cuda")
+                if torch.cuda.is_available()
+                else torch.device("cpu")
+            )
             midas.to(device)
             midas.eval()
 
@@ -38,10 +45,11 @@ def load_midas_model():
             logging.info("MiDaS Model and Transforms Loaded Successfully.")
         except Exception as e:
             logging.error(f"Error while loading MiDaS model or transforms: {e}")
-            midas = None # Ensure midas is None if loading fails
+            midas = None  # Ensure midas is None if loading fails
             transform = None
             device = None
-            raise # Re-raise the exception to indicate failure
+            raise  # Re-raise the exception to indicate failure
+
 
 def estimate_depth_heatmap(image_path):
     """
@@ -56,17 +64,17 @@ def estimate_depth_heatmap(image_path):
         try:
             load_midas_model()
         except Exception:
-            return None # Return None if model loading fails
+            return None, None  # Return tuple if model loading fails
 
     try:
         img = cv2.imread(image_path)
         if img is None:
             logging.error(f"Could not read image from {image_path}")
-            return None
+            return None, None
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     except Exception as e:
         logging.error(f"Error loading image: {e}")
-        return None
+        return None, None
 
     try:
         logging.info(f"Depth prediction started for {image_path}...")
@@ -87,17 +95,20 @@ def estimate_depth_heatmap(image_path):
 
         # Create a matplotlib figure for the heatmap
         fig, ax = plt.subplots(figsize=(10, 7))
-        im = ax.imshow(output, cmap='magma')
-        fig.colorbar(im, ax=ax, label='Depth Value')
-        ax.set_title('Depth Estimation Heatmap')
-        ax.set_xlabel('X-axis')
-        ax.set_ylabel('Y-axis')
-        plt.close(fig) # Close the figure to prevent it from being displayed immediately
+        im = ax.imshow(output, cmap="magma")
+        fig.colorbar(im, ax=ax, label="Depth Value")
+        ax.set_title("Depth Estimation Heatmap")
+        ax.set_xlabel("X-axis")
+        ax.set_ylabel("Y-axis")
+        plt.close(
+            fig
+        )  # Close the figure to prevent it from being displayed immediately
 
         return fig, output
     except Exception as e:
         logging.error(f"Error during depth prediction: {e}")
         return None, None
+
 
 def estimate_depth_map_from_rgb(rgb_image):
     """
@@ -132,7 +143,10 @@ def estimate_depth_map_from_rgb(rgb_image):
         logging.error(f"Error during in-memory depth prediction: {e}")
         return None
 
-def calculate_goat_volume_and_weight_proxy(raw_depth_map, segmentation_mask, scaling_factor_K=0.000016):
+
+def calculate_goat_volume_and_weight_proxy(
+    raw_depth_map, segmentation_mask, scaling_factor_K=DEFAULT_SCALING_FACTOR_K
+):
     """
     Calculates a volume proxy and a weight proxy for the goat.
     Args:
@@ -152,12 +166,15 @@ def calculate_goat_volume_and_weight_proxy(raw_depth_map, segmentation_mask, sca
         # The raw_depth_map from estimate_depth_heatmap is also resized to original image dimensions
         # So, their shapes should match. If not, a warning is logged.
         if raw_depth_map.shape != segmentation_mask.shape:
-            logging.warning(f"Depth map shape {raw_depth_map.shape} and segmentation mask shape {segmentation_mask.shape} do not match. This might lead to incorrect results.")
+            logging.warning(
+                f"Depth map shape {raw_depth_map.shape} and segmentation mask shape {segmentation_mask.shape} do not match. This might lead to incorrect results."
+            )
             # Attempt to resize mask to match depth map if necessary, though ideally they should match
-            segmentation_mask = cv2.resize(segmentation_mask, 
-                                           (raw_depth_map.shape[1], raw_depth_map.shape[0]), 
-                                           interpolation=cv2.INTER_NEAREST)
-
+            segmentation_mask = cv2.resize(
+                segmentation_mask,
+                (raw_depth_map.shape[1], raw_depth_map.shape[0]),
+                interpolation=cv2.INTER_NEAREST,
+            )
 
         # Apply the segmentation mask to the depth map
         # Only consider depth values where the mask is active (goat pixels)
@@ -169,12 +186,15 @@ def calculate_goat_volume_and_weight_proxy(raw_depth_map, segmentation_mask, sca
         # Calculate the weight proxy using the arbitrary scaling factor
         weight_kg_proxy = volume_proxy * scaling_factor_K
 
-        logging.info(f"Volume Proxy: {volume_proxy:.2f}, Weight Proxy: {weight_kg_proxy:.2f} kg")
+        logging.info(
+            f"Volume Proxy: {volume_proxy:.2f}, Weight Proxy: {weight_kg_proxy:.2f} kg"
+        )
         return volume_proxy, weight_kg_proxy
 
     except Exception as e:
         logging.error(f"Error calculating volume and weight proxy: {e}")
         return None, None
+
 
 # The standalone execution part is removed as this file will now primarily be imported.
 # If you need to test it standalone, you can add a __main__ block:

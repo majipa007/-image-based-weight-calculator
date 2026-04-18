@@ -4,17 +4,20 @@ import numpy as np
 from PIL import Image
 import logging
 from collections import defaultdict, deque
-from depth_estimator import estimate_depth_map_from_rgb, calculate_goat_volume_and_weight_proxy
+from depth_estimator import (
+    estimate_depth_map_from_rgb,
+    calculate_goat_volume_and_weight_proxy,
+)
 from db_store import create_store_from_config
 
 # Configure logging for the module
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 
 # Global YOLO model to avoid reloading on every function call
 yolo_model = None
+
 
 def load_yolo_model(model_path="model.pt"):
     """Loads the YOLO segmentation model."""
@@ -27,7 +30,8 @@ def load_yolo_model(model_path="model.pt"):
         except Exception as e:
             logging.error(f"Error loading YOLO model: {e}")
             yolo_model = None
-            raise # Re-raise the exception to indicate failure
+            raise  # Re-raise the exception to indicate failure
+
 
 def segment_image(image_path):
     """
@@ -48,40 +52,47 @@ def segment_image(image_path):
     try:
         logging.info(f"Segmentation started for {image_path}...")
         results = yolo_model(image_path)  # Predict on the image
-        
+
         segmented_img_pil = None
         segmentation_mask = None
 
         for result in results:
             # Get the plotted image without any text or labels
             img_array = result.plot(labels=False, boxes=False)
-            
+
             # Convert to OpenCV format for further processing
             img_cv = img_array.copy()
-            
+
             if result.masks is not None and len(result.masks.data) > 0:
                 # Combine all masks into a single binary mask
                 mask_data_np = result.masks.data.cpu().numpy()
                 original_h, original_w, _ = img_array.shape
                 combined_mask = np.zeros((original_h, original_w), dtype=np.uint8)
-                
+
                 for mask_single in mask_data_np:
-                    mask_resized = cv2.resize(mask_single, (original_w, original_h), interpolation=cv2.INTER_NEAREST)
+                    mask_resized = cv2.resize(
+                        mask_single,
+                        (original_w, original_h),
+                        interpolation=cv2.INTER_NEAREST,
+                    )
                     combined_mask = np.maximum(combined_mask, mask_resized)
 
                 segmentation_mask = combined_mask
             else:
                 logging.info(f"No masks detected for {image_path}.")
 
-            segmented_img_pil = Image.fromarray(img_cv[..., ::-1]) # Convert BGR to RGB for PIL
-            break # Process only the first result for simplicity
+            segmented_img_pil = Image.fromarray(
+                img_cv[..., ::-1]
+            )  # Convert BGR to RGB for PIL
+            break  # Process only the first result for simplicity
 
         logging.info("Segmentation completed.")
         return segmented_img_pil, segmentation_mask
-    
+
     except Exception as e:
         logging.error(f"Error during segmentation: {e}")
         return None, None
+
 
 def _decode_bytes_to_bgr(image_bytes):
     image_arr = np.frombuffer(image_bytes, dtype=np.uint8)
@@ -109,6 +120,7 @@ def track_goats_in_video(
     tail_thickness=3,
     mask_color=(0, 255, 0),
     mask_alpha=0.35,
+    orientation_mode="landscape",
 ):
     """
     Tracks goats in a video, stores candidate goat crops/masks in Postgres,
@@ -122,6 +134,7 @@ def track_goats_in_video(
         conf_threshold (float): YOLO confidence threshold.
         scale (float): Resize scale applied before inference.
         tail_length (int): Number of historical center points for motion tails.
+        orientation_mode (str): "landscape" for default, "portrait" to rotate frames 90 deg.
     Returns:
         tuple: (output_path, run_id, per_goat_summary, frames_processed) or
                (None, None, None, 0) on failure.
@@ -150,8 +163,11 @@ def track_goats_in_video(
 
     orig_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     orig_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    new_w = max(1, int(orig_w * scale))
-    new_h = max(1, int(orig_h * scale))
+    rotate_to_portrait = str(orientation_mode).lower() == "portrait"
+    base_w = orig_h if rotate_to_portrait else orig_w
+    base_h = orig_w if rotate_to_portrait else orig_h
+    new_w = max(1, int(base_w * scale))
+    new_h = max(1, int(base_h * scale))
 
     writer = cv2.VideoWriter(
         output_path,
@@ -178,9 +194,13 @@ def track_goats_in_video(
                 break
 
             frames_processed += 1
+            if rotate_to_portrait:
+                frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
             frame = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
 
-            results = yolo_model.track(frame, conf=conf_threshold, persist=True, verbose=False)
+            results = yolo_model.track(
+                frame, conf=conf_threshold, persist=True, verbose=False
+            )
             result = results[0]
             annotated_frame = frame.copy()
             overlay = np.zeros_like(annotated_frame, dtype=np.uint8)
@@ -228,7 +248,9 @@ def track_goats_in_video(
 
                         if mask_area > 0 and crop_image.size > 0 and crop_mask.size > 0:
                             ok_img, img_buf = cv2.imencode(".jpg", crop_image)
-                            ok_mask, mask_buf = cv2.imencode(".png", (crop_mask * 255).astype(np.uint8))
+                            ok_mask, mask_buf = cv2.imencode(
+                                ".png", (crop_mask * 255).astype(np.uint8)
+                            )
                             if ok_img and ok_mask:
                                 store.add_candidate(
                                     run_id=run_id,
@@ -261,7 +283,9 @@ def track_goats_in_video(
                     cv2.LINE_AA,
                 )
 
-            annotated_frame = cv2.addWeighted(annotated_frame, 1.0, overlay, mask_alpha, 0)
+            annotated_frame = cv2.addWeighted(
+                annotated_frame, 1.0, overlay, mask_alpha, 0
+            )
             writer.write(annotated_frame)
     except Exception as e:
         logging.error(f"Error during video tracking: {e}")
@@ -300,7 +324,9 @@ def track_goats_in_video(
             if raw_depth_map is None:
                 continue
 
-            _, weight_kg_proxy = calculate_goat_volume_and_weight_proxy(raw_depth_map, mask_crop)
+            _, weight_kg_proxy = calculate_goat_volume_and_weight_proxy(
+                raw_depth_map, mask_crop
+            )
             if weight_kg_proxy is None:
                 continue
 
